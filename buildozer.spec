@@ -10,10 +10,10 @@ android.permissions = INTERNET,CAMERA,VIBRATE
 android.accept_sdk_license = True
 android.api = 33
 android.minapi = 21
-android.ndk = 23b
+android.ndk = 25c
 pypi_mirror = https://pypi.tuna.tsinghua.edu.cn/simple
 
-# 以下为可选优化项，防止 gradle 额外下载
+# 禁用 gradle 额外依赖（可选）
 android.gradle_dependencies =
 
 [buildozer]
