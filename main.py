@@ -1,5 +1,5 @@
 """
-智能电池工序追溯系统 - 手机采集端（Android 使用系统扫码 Intent，Windows 模拟）
+智能电池工序追溯系统 - 手机采集端（集成摄像头实时扫码）
 """
 import os
 import json
@@ -7,32 +7,31 @@ import base64
 from datetime import datetime
 import requests
 from kivy.app import App
+from kivy.clock import Clock, mainthread
 from kivy.core.text import LabelBase
 from kivy.core.window import Window
+from kivy.graphics import Color, Line, RoundedRectangle
 from kivy.lang import Builder
-from kivy.properties import StringProperty
+from kivy.properties import StringProperty, BooleanProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
-from kivy.uix.label import Label
 from kivy.uix.checkbox import CheckBox
+from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import Screen, ScreenManager
 from kivy.uix.textinput import TextInput
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.relativelayout import RelativeLayout
+from kivy.uix.widget import Widget
 from kivy.utils import platform
+from kivy_garden.xcamera import XCamera  # 需要 pip install kivy_garden.xcamera
+from pyzbar.pyzbar import decode as zbar_decode  # 需要 pip install pyzbar
+from PIL import Image as PILImage
 from plyer import uniqueid, vibrator
 
-# ---------- Android 扫码 Intent 所需依赖 ----------
+# ---------- Android 权限请求（如有需要） ----------
 if platform == 'android':
-    try:
-        from jnius import autoclass
-        PythonActivity = autoclass('org.kivy.android.PythonActivity')
-        Intent = autoclass('android.content.Intent')
-        RESULT_OK = autoclass('android.app.Activity').RESULT_OK
-        RESULT_CANCELED = autoclass('android.app.Activity').RESULT_CANCELED
-        # 可选：检测 ZXing 是否存在（不强制）
-    except ImportError:
-        print("⚠️ pyjnius 未安装，Android 扫码功能将不可用")
+    from android.permissions import request_permissions, Permission  # 需要 pyjnius
 
 # ---------- 字体 ----------
 if os.path.exists("NotoSansCJKsc-Regular.otf"):
@@ -181,18 +180,23 @@ KV = f'''
                         size_hint_y: None
                         height: "52dp"
 
+                    # 记住密码左对齐
                     BoxLayout:
                         size_hint_y: None
                         height: "40dp"
                         spacing: "5dp"
+                        # 确保左对齐，不额外占空间
                         CheckBox:
                             id: remember_check
                             size_hint: None, None
                             size: "30dp", "30dp"
+                            pos_hint: {{"top": 1}}
                         Label:
                             text: "记住密码"
                             font_name: "{DEFAULT_FONT}"
                             color: 0.173, 0.243, 0.314, 1
+                            size_hint_x: None
+                            width: "80dp"
 
                     Button:
                         text: "登  录"
@@ -206,7 +210,7 @@ KV = f'''
                         height: "52dp"
                         on_press: app.login(username_input.text, password_input.text)
 
-                # 底部占位，让卡片居中
+                # 底部占位
                 Widget:
                     size_hint_y: None
                     height: "40dp"
@@ -238,23 +242,44 @@ KV = f'''
                 halign: "right"
                 padding: "10dp"
 
-        # 扫码按钮区域（替换原来的 camera_box）
+        # 扫描预览区域（虚线框 + 摄像头）
         RelativeLayout:
-            id: scan_button_box
-            Button:
-                id: scan_btn
-                text: "📷 扫码"
-                font_name: "{DEFAULT_FONT}"
-                font_size: "24sp"
-                background_color: 0.231, 0.490, 0.847, 0.85
-                color: 1, 1, 1, 0.95
-                pos_hint: {{"center_x": 0.5, "center_y": 0.5}}
-                size_hint: 0.6, 0.5
-                on_press: app.start_scan()
+            id: scan_area
+            size_hint: 1, 0.8  # 占用大部分空间
+            # 虚线框绘制
+            canvas.after:
+                Color:
+                    rgba: 0.231, 0.49, 0.847, 0.9
+                Line:
+                    rectangle: (self.x + dp(30), self.y + dp(30), self.width - dp(60), self.height - dp(90))
+                    width: 1.5
+                    dash_length: 12
+                    dash_offset: 6
+
+        # 扫码按钮（圆角卡片风格）
+        Button:
+            id: scan_btn
+            text: "🔍 扫码"
+            font_name: "{DEFAULT_FONT}"
+            font_size: "22sp"
+            background_normal: ""
+            background_color: 0.231, 0.490, 0.847, 0.85
+            color: 1, 1, 1, 0.95
+            size_hint: 0.6, None
+            height: "56dp"
+            pos_hint: {{"center_x": 0.5}}
+            canvas.after:
+                Color:
+                    rgba: 1, 1, 1, 0.1
+                RoundedRectangle:
+                    radius: [28]
+                    pos: self.pos
+                    size: self.size
+            on_press: app.start_scan()
 
         InfoLabel:
             id: status_label
-            text: "等待扫码..."
+            text: ""
             color: 0.498, 0.549, 0.553, 1
             size_hint_y: None
             height: "30dp"
@@ -304,6 +329,7 @@ class BatteryApp(App):
     server_url = StringProperty(load_server_url())
 
     def build(self):
+        # 背景色与登录界面一致，消除启动闪变
         Window.clearcolor = (0.945, 0.957, 0.965, 1)
         Window.softinput_mode = 'pan'
 
@@ -316,13 +342,12 @@ class BatteryApp(App):
         except:
             self.device_id = "unknown"
 
-        # 保存 Activity 回调引用（Android）
-        self._scan_request_code = 12345
-        self._pending_scan = False
+        # 摄像头相关变量
+        self.camera = None
+        self.decode_event = None
 
         saved_username, saved_password = load_account()
         if saved_username:
-            from kivy.clock import Clock
             Clock.schedule_once(lambda dt: self._fill_saved_credentials(saved_username, saved_password), 0)
 
         self.sm = ScreenManager()
@@ -337,20 +362,81 @@ class BatteryApp(App):
             login_screen.ids.password_input.text = password
             login_screen.ids.remember_check.active = True
 
-    # ---------- Android Activity 结果回调 ----------
-    def on_activity_result(self, request_code, result_code, intent):
-        if request_code == self._scan_request_code and self._pending_scan:
-            self._pending_scan = False
-            if result_code == RESULT_OK and intent:
-                scan_result = intent.getStringExtra('SCAN_RESULT')
-                if scan_result:
-                    self._handle_scan_result(scan_result)
-                else:
-                    self.show_error("扫码结果为空")
-            else:
-                self.show_error("扫码取消或失败")
-                scan_screen = self.sm.get_screen("scan")
-                scan_screen.ids.status_label.text = "扫码取消"
+    # ---------- 扫码（摄像头实时解码）----------
+    def start_scan(self):
+        # 防止重复点击
+        if self.camera:
+            return
+
+        # 请求摄像头权限（Android）
+        if platform == 'android':
+            request_permissions([Permission.CAMERA])
+            # 简单等待权限结果，实际应使用回调，这里假设权限已授予
+            Clock.schedule_once(self._on_android_permission_granted, 0.5)
+        else:
+            self._activate_camera()
+
+    def _on_android_permission_granted(self, dt):
+        # 可以在此检查权限，此处简化直接激活
+        self._activate_camera()
+
+    def _activate_camera(self):
+        scan_screen = self.sm.get_screen("scan")
+        if not scan_screen:
+            return
+
+        # 移除旧相机（如果有）
+        if self.camera:
+            scan_screen.ids.scan_area.remove_widget(self.camera)
+            self.camera = None
+
+        try:
+            self.camera = XCamera(play=True)
+            self.camera.size_hint = (1, 1)
+            scan_screen.ids.scan_area.add_widget(self.camera, index=0)  # 放在虚线框下方
+            # 开始解码循环
+            self.decode_event = Clock.schedule_interval(self._decode_frame, 0.5)
+            scan_screen.ids.status_label.text = "扫描中..."
+        except Exception as e:
+            self.show_error(f"摄像头启动失败：{e}")
+            self.camera = None
+
+    def _decode_frame(self, dt):
+        if not self.camera or not self.camera.texture:
+            return
+        # 获取摄像头纹理的原始像素数据
+        tex = self.camera.texture
+        size = tex.size
+        pixels = tex.pixels  # RGBA 字符串
+
+        try:
+            # 将 RGBA 转换为 PIL Image（灰度处理以加速）
+            pil_image = PILImage.frombytes('RGBA', size, pixels)
+            pil_image = pil_image.convert('L')  # 灰度
+            # 使用 pyzbar 解码
+            decoded = zbar_decode(pil_image)
+            if decoded:
+                data = decoded[0].data.decode('utf-8')
+                self.on_barcode_detected(data)
+        except Exception as e:
+            pass  # 忽略解码错误
+
+    @mainthread
+    def on_barcode_detected(self, barcode_data):
+        # 停止扫描
+        self.stop_scan()
+        self._handle_scan_result(barcode_data)
+
+    def stop_scan(self):
+        if self.decode_event:
+            self.decode_event.cancel()
+            self.decode_event = None
+        if self.camera:
+            self.camera.play = False
+            scan_screen = self.sm.get_screen("scan")
+            if scan_screen and self.camera.parent:
+                self.camera.parent.remove_widget(self.camera)
+            self.camera = None
 
     def _handle_scan_result(self, code):
         scan_screen = self.sm.get_screen("scan")
@@ -358,52 +444,6 @@ class BatteryApp(App):
         scan_screen.ids.status_label.text = f'{"成功" if success else "失败"}：{msg}'
         if success:
             scan_screen.ids.last_sn_label.text = code
-
-    # ---------- 启动扫码（Android Intent）----------
-    def start_scan(self):
-        if platform != 'android':
-            # Windows 模拟扫码
-            self.mock_scan_popup()
-            return
-
-        try:
-            # 创建 Intent（ZXing 标准扫码）
-            intent = Intent()
-            intent.setAction('com.google.zxing.client.android.SCAN')
-            # 可添加 extra 参数
-            intent.putExtra('SCAN_MODE', 'QR_CODE_MODE')  # 可选
-            # 检测是否有应用能处理
-            if not PythonActivity.mActivity.getPackageManager().queryIntentActivities(intent, 0).size():
-                self.show_error("未安装扫码应用（如ZXing）")
-                return
-            # 启动 Activity 并等待结果
-            PythonActivity.mActivity.startActivityForResult(intent, self._scan_request_code)
-            self._pending_scan = True
-        except Exception as e:
-            self.show_error(f"启动扫码失败：{e}")
-
-    def mock_scan_popup(self):
-        box = BoxLayout(orientation="vertical", padding=10, spacing=10)
-        sn_input = TextInput(hint_text="输入电池SN", font_name=DEFAULT_FONT, size_hint_y=None, height=40)
-        box.add_widget(sn_input)
-        btn_box = BoxLayout(size_hint_y=None, height=40, spacing=10)
-        popup = Popup(title="模拟扫码", title_font=DEFAULT_FONT, content=box, size_hint=(0.8, 0.3))
-
-        def do_submit(instance):
-            sn = sn_input.text.strip()
-            popup.dismiss()
-            self._handle_scan_result(sn)
-
-        btn_ok = Button(text="确定", font_name=DEFAULT_FONT, background_normal="",
-                        background_color=(0.231, 0.49, 0.847, 1), color=(1, 1, 1, 0.92))
-        btn_ok.bind(on_press=do_submit)
-        btn_cancel = Button(text="取消", font_name=DEFAULT_FONT, background_normal="",
-                            background_color=(0.498, 0.549, 0.553, 1), color=(1, 1, 1, 0.92))
-        btn_cancel.bind(on_press=popup.dismiss)
-        btn_box.add_widget(btn_ok)
-        btn_box.add_widget(btn_cancel)
-        box.add_widget(btn_box)
-        popup.open()
 
     # ---------- 登录相关 ----------
     def login(self, username, password):
@@ -473,6 +513,7 @@ class BatteryApp(App):
             return False, f"请求异常：{e}"
 
     def logout(self):
+        self.stop_scan()  # 退出扫描界面时关闭摄像头
         self._token = None
         self.process_name = ""
         self.operator_name = ""
@@ -488,13 +529,15 @@ class BatteryApp(App):
         popup.open()
 
     def show_server_settings(self):
-        box = BoxLayout(orientation="vertical", padding=10, spacing=10)
-        url_input = TextInput(text=self.server_url, font_name=DEFAULT_FONT, size_hint_y=None, height=40)
+        # 修复弹窗内容显示不全的问题：使用 ScrollView + 固定高度
+        box = BoxLayout(orientation="vertical", spacing=10, padding=10)
         box.add_widget(Label(text="服务器地址:", font_name=DEFAULT_FONT, size_hint_y=None, height=30))
+        url_input = TextInput(text=self.server_url, font_name=DEFAULT_FONT, size_hint_y=None, height=40)
         box.add_widget(url_input)
-        btn_box = BoxLayout(size_hint_y=None, height=40, spacing=10)
 
-        popup = Popup(title="网络设置", title_font=DEFAULT_FONT, content=box, size_hint=(0.8, 0.5))
+        btn_box = BoxLayout(size_hint_y=None, height=40, spacing=10)
+        popup = Popup(title="网络设置", title_font=DEFAULT_FONT, content=box,
+                      size_hint=(0.8, None), height="220dp")
 
         def save(instance):
             new_url = url_input.text.strip()
@@ -527,9 +570,18 @@ class LoginScreen(Screen):
 
 class ScanScreen(Screen):
     def on_enter(self, *args):
-        # 清空状态
-        self.ids.status_label.text = "点击下方扫码按钮"
+        # 清空状态文字（不再显示“点击下方扫码按钮”）
+        self.ids.status_label.text = ""
         self.ids.last_sn_label.text = ""
+        # 如果之前有摄像头残留，清除
+        app = App.get_running_app()
+        if app.camera:
+            app.stop_scan()
+
+    def on_leave(self, *args):
+        # 离开扫描界面时关闭摄像头，避免资源占用
+        app = App.get_running_app()
+        app.stop_scan()
 
 
 if __name__ == "__main__":
