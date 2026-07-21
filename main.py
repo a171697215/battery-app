@@ -1,6 +1,6 @@
 """
 智能电池工序追溯系统 - 手机采集端（纯文字版，震动反馈，记住密码，动态服务器地址）
-Windows: 模拟扫码  |  Android: 真实摄像头 + 震动反馈
+Windows: 模拟扫码  |  Android: 系统扫码Intent（无需ZBar）
 """
 import os
 import json
@@ -20,8 +20,17 @@ from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import Screen, ScreenManager
 from kivy.uix.textinput import TextInput
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.widget import Widget
 from kivy.utils import platform
 from plyer import uniqueid, vibrator
+
+# ---------- Android 扫码 Intent 依赖 ----------
+if platform == 'android':
+    try:
+        from jnius import autoclass, PythonJavaClass, java_method
+        from android.permissions import request_permissions, Permission
+    except ImportError:
+        raise ImportError("请安装 pyjnius: pip install pyjnius")
 
 # ---------- 字体 ----------
 if os.path.exists("NotoSansCJKsc-Regular.otf"):
@@ -272,7 +281,7 @@ class BatteryApp(App):
     def build(self):
         # 提前设置背景色，减少黑色闪屏
         Window.clearcolor = (0.945, 0.957, 0.965, 1)
-        Window.softinput_mode = 'pan'  # 保留 pan 模式，配合 ScrollView 实现滚动
+        Window.softinput_mode = 'pan'
 
         Builder.load_string(KV)
         self._token = None
@@ -287,11 +296,76 @@ class BatteryApp(App):
             from kivy.clock import Clock
             Clock.schedule_once(lambda dt: self._fill_saved_credentials(saved_username, saved_password), 0)
 
+        # Android 扫码初始化
+        if platform == 'android':
+            self._init_android_scanner()
+
         self.sm = ScreenManager()
         self.sm.add_widget(LoginScreen(name="login"))
         self.sm.add_widget(ScanScreen(name="scan"))
         return self.sm
 
+    # ---------- Android 扫码相关 ----------
+    def _init_android_scanner(self):
+        try:
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Intent = autoclass('android.content.Intent')
+            Activity = autoclass('android.app.Activity')
+            self.activity = PythonActivity.mActivity
+            self.Intent = Intent
+            self.Activity = Activity
+            self._request_code = 0x1234
+
+            class ActivityResultCallback(PythonJavaClass):
+                __javainterfaces__ = ['org/kivy/android/PythonActivity$OnActivityResultListener']
+                __javacontext__ = 'app'
+                def __init__(self, app):
+                    self.app = app
+                @java_method('(IILandroid/content/Intent;)Z')
+                def onActivityResult(self, requestCode, resultCode, intent):
+                    if requestCode == self.app._request_code:
+                        if resultCode == self.app.Activity.RESULT_OK and intent:
+                            result = intent.getStringExtra('SCAN_RESULT')
+                            if result:
+                                self.app._on_scan_result(result)
+                        elif resultCode == self.app.Activity.RESULT_CANCELED:
+                            self.app._on_scan_cancel()
+                        return True
+                    return False
+            self._callback = ActivityResultCallback(self)
+            PythonActivity.registerOnActivityResultListener(self._callback)
+            self._scanner_enabled = True
+        except Exception as e:
+            print(f"Android扫码初始化失败: {e}")
+            self._scanner_enabled = False
+
+    def launch_scanner(self):
+        if not getattr(self, '_scanner_enabled', False):
+            self.show_error("扫码功能未初始化，请使用模拟扫码")
+            return
+        try:
+            intent = self.Intent()
+            intent.setAction('com.google.zxing.client.android.SCAN')
+            # 可设置扫码模式
+            # intent.putExtra('SCAN_MODE', 'QR_CODE_MODE')
+            self.activity.startActivityForResult(intent, self._request_code)
+        except Exception as e:
+            self.show_error("未找到扫码应用，请安装 ZXing 或使用模拟扫码")
+            # 可选：自动打开模拟扫码作为后备
+            # self.mock_scan_popup()
+
+    def _on_scan_result(self, result):
+        success, msg = self.submit_record(result)
+        scan_screen = self.sm.get_screen("scan")
+        scan_screen.ids.status_label.text = f'{"成功" if success else "失败"}：{msg}'
+        if success:
+            scan_screen.ids.last_sn_label.text = result
+
+    def _on_scan_cancel(self):
+        scan_screen = self.sm.get_screen("scan")
+        scan_screen.ids.status_label.text = "扫码已取消"
+
+    # ---------- 其他方法 ----------
     def _fill_saved_credentials(self, username, password):
         login_screen = self.sm.get_screen('login')
         if login_screen:
@@ -450,11 +524,33 @@ class ScanScreen(Screen):
         camera_box.clear_widgets()
 
         if platform == 'android':
-            from kivy_garden.zbarcam import ZBarCam
-            zbarcam = ZBarCam()
-            zbarcam.bind(symbols=self.on_symbols)
-            camera_box.add_widget(zbarcam)
+            # 使用系统扫码 Intent
+            main_btn = Button(
+                text="📷 扫码",
+                font_name=DEFAULT_FONT,
+                background_color=(0.231, 0.490, 0.847, 0.85),
+                color=(1, 1, 1, 0.95),
+                font_size="24sp",
+                size_hint=(None, None),
+                size=("200dp", "80dp"),
+                pos_hint={"center_x": 0.5, "center_y": 0.5},
+            )
+            main_btn.bind(on_press=lambda x: app.launch_scanner())
+            camera_box.add_widget(main_btn)
+
+            # 添加小字提示：点击扫码调用系统相机
+            tip = Label(
+                text="(点击按钮调用系统扫码)",
+                font_name=DEFAULT_FONT,
+                color=(0.4, 0.4, 0.4, 1),
+                font_size="12sp",
+                pos_hint={"center_x": 0.5, "center_y": 0.2},
+                size_hint=(None, None),
+                size=("200dp", "30dp"),
+            )
+            camera_box.add_widget(tip)
         else:
+            # Windows 模拟扫码
             btn = Button(
                 text="点此模拟扫码",
                 font_name=DEFAULT_FONT,
@@ -464,18 +560,6 @@ class ScanScreen(Screen):
             )
             btn.bind(on_press=lambda x: app.mock_scan_popup())
             camera_box.add_widget(btn)
-
-    def on_symbols(self, instance, symbols):
-        if not symbols:
-            return
-        code = symbols[0].data.decode('utf-8').strip()
-        if not code:
-            return
-        app = App.get_running_app()
-        success, msg = app.submit_record(code)
-        self.ids.status_label.text = f'{"成功" if success else "失败"}：{msg}'
-        if success:
-            self.ids.last_sn_label.text = code
 
 
 if __name__ == "__main__":
