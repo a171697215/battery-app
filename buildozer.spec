@@ -11,7 +11,7 @@ android.accept_sdk_license = True
 android.api = 33
 android.minapi = 21
 android.ndk = 25c
-android.orientation = portrait
+orientation = portrait
 pypi_mirror = https://pypi.tuna.tsinghua.edu.cn/simple
 
 [buildozer]
