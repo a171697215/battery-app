@@ -32,14 +32,19 @@ jobs:
             git zip unzip openjdk-17-jdk \
             autoconf libtool pkg-config \
             zlib1g-dev libncurses-dev \
-            cmake libffi-dev libssl-dev python3-dev
+            cmake libffi-dev libssl-dev python3-dev \
+            autoconf-archive
+
+      - name: Set up autotools environment
+        run: |
+          echo "ACLOCAL_PATH=/usr/share/aclocal:/usr/share/autoconf-archive" >> $GITHUB_ENV
 
       - name: Install buildozer
         run: pip install buildozer
 
       - name: Build APK
         env:
-          ANDROID_NDK_HOME: ${{ github.workspace }}/.buildozer/android/platform/android-ndk-r23b
+          ANDROID_NDK_HOME: ${{ github.workspace }}/.buildozer/android/platform/android-ndk-r25c
         run: buildozer -v android debug
 
       - name: Upload APK
