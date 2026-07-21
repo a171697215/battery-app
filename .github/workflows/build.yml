@@ -32,18 +32,35 @@ jobs:
             git zip unzip openjdk-17-jdk \
             autoconf libtool pkg-config \
             zlib1g-dev libncurses-dev \
-            cmake libffi-dev libssl-dev python3-dev \
-            autoconf-archive automake
+            cmake libffi-dev libssl-dev python3-dev
 
-      - name: Fix libffi autogen for Android
+      - name: Pre-download and patch libffi (skip LT_SYS_SYMBOL_USCORE error)
         run: |
-          # 创建符号链接，让 autoreconf 能找到 libtool 宏
-          sudo ln -sf /usr/share/aclocal/libtool.m4 /usr/share/aclocal/lt~obsolete.m4
-          sudo ln -sf /usr/share/aclocal/libtool.m4 /usr/share/aclocal/ltsugar.m4
-          sudo ln -sf /usr/share/aclocal/libtool.m4 /usr/share/aclocal/ltversion.m4
-          sudo ln -sf /usr/share/aclocal/libtool.m4 /usr/share/aclocal/ltoptions.m4
-          # 设置环境变量
-          echo "ACLOCAL_PATH=/usr/share/aclocal:/usr/share/autoconf-archive" >> $GITHUB_ENV
+          # 定义要修补的架构和 NDK API 版本
+          ARCHS=("arm64-v8a" "armeabi-v7a")
+          NDK_TARGET="21"
+          LIBFFI_VERSION="v3.4.4"   # 这个版本与 Buildozer 默认一致
+
+          for ARCH in "${ARCHS[@]}"; do
+            # 构建目标路径：Buildozer 会在此路径下寻找 libffi 源码
+            TARGET_DIR=".buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/libffi/${ARCH}__ndk_target_${NDK_TARGET}/libffi"
+            
+            # 如果目录已存在（可能来自缓存），则跳过
+            if [ -d "$TARGET_DIR" ]; then
+              echo "libffi for ${ARCH} already exists, skipping download."
+              continue
+            fi
+
+            echo "Cloning libffi (${LIBFFI_VERSION}) for ${ARCH} ..."
+            mkdir -p "$(dirname "$TARGET_DIR")"
+            git clone --depth 1 --branch $LIBFFI_VERSION https://github.com/libffi/libffi.git "$TARGET_DIR"
+            
+            cd "$TARGET_DIR"
+            echo "Patching configure.ac to comment out LT_SYS_SYMBOL_USCORE ..."
+            # 注释掉包含 LT_SYS_SYMBOL_USCORE 的行
+            sed -i 's/^LT_SYS_SYMBOL_USCORE/dnl LT_SYS_SYMBOL_USCORE/' configure.ac
+            cd -
+          done
 
       - name: Install buildozer
         run: pip install buildozer
@@ -51,7 +68,6 @@ jobs:
       - name: Build APK
         env:
           ANDROID_NDK_HOME: ${{ github.workspace }}/.buildozer/android/platform/android-ndk-r25c
-          ACLOCAL_PATH: /usr/share/aclocal:/usr/share/autoconf-archive
         run: buildozer -v android debug
 
       - name: Upload APK
