@@ -39,7 +39,7 @@ jobs:
 
       - name: Build APK
         env:
-          ANDROID_NDK_HOME: ${{ github.workspace }}/.buildozer/android/platform/android-ndk-r25c
+          ANDROID_NDK_HOME: ${{ github.workspace }}/.buildozer/android/platform/android-ndk-r23b
         run: buildozer -v android debug
 
       - name: Upload APK
