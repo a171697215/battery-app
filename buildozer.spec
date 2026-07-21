@@ -8,10 +8,13 @@ version = 1.0.0
 requirements = python3,kivy,requests,plyer
 android.permissions = INTERNET,CAMERA,VIBRATE
 android.accept_sdk_license = True
-pypi_mirror = https://pypi.tuna.tsinghua.edu.cn/simple
 android.api = 33
 android.minapi = 21
-android.ndk = 25c
+android.ndk = 23b
+pypi_mirror = https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 以下为可选优化项，防止 gradle 额外下载
+android.gradle_dependencies =
 
 [buildozer]
 log_level = 2
