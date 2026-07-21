@@ -18,3 +18,8 @@ android.gradle_dependencies =
 
 [buildozer]
 log_level = 2
+
+
+# 强制使用系统 libtool 而不是 NDK 自带的
+android.add_sdk = false
+android.add_ndk = false
