@@ -33,10 +33,16 @@ jobs:
             autoconf libtool pkg-config \
             zlib1g-dev libncurses-dev \
             cmake libffi-dev libssl-dev python3-dev \
-            autoconf-archive
+            autoconf-archive automake
 
-      - name: Set up autotools environment
+      - name: Fix libffi autogen for Android
         run: |
+          # 创建符号链接，让 autoreconf 能找到 libtool 宏
+          sudo ln -sf /usr/share/aclocal/libtool.m4 /usr/share/aclocal/lt~obsolete.m4
+          sudo ln -sf /usr/share/aclocal/libtool.m4 /usr/share/aclocal/ltsugar.m4
+          sudo ln -sf /usr/share/aclocal/libtool.m4 /usr/share/aclocal/ltversion.m4
+          sudo ln -sf /usr/share/aclocal/libtool.m4 /usr/share/aclocal/ltoptions.m4
+          # 设置环境变量
           echo "ACLOCAL_PATH=/usr/share/aclocal:/usr/share/autoconf-archive" >> $GITHUB_ENV
 
       - name: Install buildozer
@@ -45,6 +51,7 @@ jobs:
       - name: Build APK
         env:
           ANDROID_NDK_HOME: ${{ github.workspace }}/.buildozer/android/platform/android-ndk-r25c
+          ACLOCAL_PATH: /usr/share/aclocal:/usr/share/autoconf-archive
         run: buildozer -v android debug
 
       - name: Upload APK
