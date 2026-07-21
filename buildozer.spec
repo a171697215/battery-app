@@ -13,13 +13,8 @@ android.minapi = 21
 android.ndk = 25c
 pypi_mirror = https://pypi.tuna.tsinghua.edu.cn/simple
 
-# 禁用 gradle 额外依赖（可选）
-android.gradle_dependencies =
+# 以下保持默认，不要添加额外参数
+# android.add_sdk 和 android.add_ndk 不要出现
 
 [buildozer]
 log_level = 2
-
-
-# 强制使用系统 libtool 而不是 NDK 自带的
-android.add_sdk = false
-android.add_ndk = false
