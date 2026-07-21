@@ -6,13 +6,12 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf,otf
 version = 1.0.0
 requirements = python3,kivy,requests,plyer,pyjnius,android
+orientation = portrait
 android.permissions = INTERNET,CAMERA,VIBRATE
 android.accept_sdk_license = True
 android.api = 33
 android.minapi = 21
 android.ndk = 25c
-orientation = portrait
-pypi_mirror = https://pypi.tuna.tsinghua.edu.cn/simple
 
 [buildozer]
 log_level = 2
