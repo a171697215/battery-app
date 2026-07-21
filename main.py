@@ -19,6 +19,7 @@ from kivy.uix.checkbox import CheckBox
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import Screen, ScreenManager
 from kivy.uix.textinput import TextInput
+from kivy.uix.scrollview import ScrollView
 from kivy.utils import platform
 from plyer import uniqueid, vibrator
 
@@ -81,8 +82,8 @@ KV = f'''
 <LoginScreen>:
     BoxLayout:
         orientation: "vertical"
-        padding: "30dp", "20dp", "30dp", "20dp"
-        spacing: "15dp"
+        padding: "10dp"
+        spacing: "5dp"
         canvas.before:
             Color:
                 rgba: 0.945, 0.957, 0.965, 1
@@ -90,13 +91,10 @@ KV = f'''
                 pos: self.pos
                 size: self.size
 
+        # 顶部：网络设置按钮（右对齐）
         BoxLayout:
             size_hint_y: None
             height: "40dp"
-            orientation: "horizontal"
-            Label:
-                text: ""
-                size_hint_x: 1
             Button:
                 text: "设置网络"
                 font_name: "{DEFAULT_FONT}"
@@ -106,83 +104,90 @@ KV = f'''
                 color: 0.231, 0.490, 0.847, 1
                 size_hint: None, None
                 size: "80dp", "40dp"
+                pos_hint: {{"right": 1}}
                 on_press: app.show_server_settings()
 
-        InfoLabel:
-            text: "智能电池追溯系统"
-            font_size: "24sp"
-            halign: "center"
-            bold: True
-            size_hint_y: None
-            height: "50dp"
-
-        BoxLayout:
-            orientation: "vertical"
-            spacing: "15dp"
-            padding: "25dp"
-            size_hint_y: None
-            height: "280dp"
-            pos_hint: {{"top": 1}}
-            canvas:
-                Color:
-                    rgba: 1, 1, 1, 1
-                RoundedRectangle:
-                    radius: [18]
-                    pos: self.pos
-                    size: self.size
-
-            TextInput:
-                id: username_input
-                hint_text: "工号"
-                font_name: "{DEFAULT_FONT}"
-                background_normal: ""
-                background_color: 0.945, 0.957, 0.965, 1
-                foreground_color: 0.173, 0.243, 0.314, 1
-                padding: "14dp"
-                cursor_color: 0.231, 0.490, 0.847, 1
-                size_hint_y: None
-                height: "52dp"
-
-            TextInput:
-                id: password_input
-                hint_text: "密码"
-                password: True
-                font_name: "{DEFAULT_FONT}"
-                background_normal: ""
-                background_color: 0.945, 0.957, 0.965, 1
-                foreground_color: 0.173, 0.243, 0.314, 1
-                padding: "14dp"
-                cursor_color: 0.231, 0.490, 0.847, 1
-                size_hint_y: None
-                height: "52dp"
-
+        # 中间主体：垂直居中
+        ScrollView:
+            do_scroll_x: False
+            do_scroll_y: True
             BoxLayout:
+                orientation: "vertical"
                 size_hint_y: None
-                height: "40dp"
-                spacing: "5dp"
-                CheckBox:
-                    id: remember_check
-                    size_hint: None, None
-                    size: "30dp", "30dp"
-                Label:
-                    text: "记住密码"
+                height: self.minimum_height
+                spacing: "15dp"
+                padding: "20dp"
+                pos_hint: {{"center_x": 0.5, "center_y": 0.5}}
+                canvas:
+                    Color:
+                        rgba: 1, 1, 1, 1
+                    RoundedRectangle:
+                        radius: [18]
+                        pos: self.pos
+                        size: self.size
+
+                InfoLabel:
+                    text: "智能电池追溯系统"
+                    font_size: "24sp"
+                    halign: "center"
+                    bold: True
+                    size_hint_y: None
+                    height: "50dp"
+
+                TextInput:
+                    id: username_input
+                    hint_text: "工号"
                     font_name: "{DEFAULT_FONT}"
-                    color: 0.173, 0.243, 0.314, 1
+                    background_normal: ""
+                    background_color: 0.945, 0.957, 0.965, 1
+                    foreground_color: 0.173, 0.243, 0.314, 1
+                    padding: "14dp"
+                    cursor_color: 0.231, 0.490, 0.847, 1
+                    size_hint_y: None
+                    height: "52dp"
 
-            Button:
-                text: "登  录"
-                font_name: "{DEFAULT_FONT}"
-                font_size: "18sp"
-                bold: True
-                background_normal: ""
-                background_color: 0.231, 0.490, 0.847, 1
-                color: 1, 1, 1, 0.92
-                size_hint_y: None
-                height: "52dp"
-                on_press: app.login(username_input.text, password_input.text)
+                TextInput:
+                    id: password_input
+                    hint_text: "密码"
+                    password: True
+                    font_name: "{DEFAULT_FONT}"
+                    background_normal: ""
+                    background_color: 0.945, 0.957, 0.965, 1
+                    foreground_color: 0.173, 0.243, 0.314, 1
+                    padding: "14dp"
+                    cursor_color: 0.231, 0.490, 0.847, 1
+                    size_hint_y: None
+                    height: "52dp"
 
-        Label:
-            size_hint_y: 0.3
+                BoxLayout:
+                    size_hint_y: None
+                    height: "40dp"
+                    spacing: "5dp"
+                    CheckBox:
+                        id: remember_check
+                        size_hint: None, None
+                        size: "30dp", "30dp"
+                    Label:
+                        text: "记住密码"
+                        font_name: "{DEFAULT_FONT}"
+                        color: 0.173, 0.243, 0.314, 1
+
+                Button:
+                    text: "登  录"
+                    font_name: "{DEFAULT_FONT}"
+                    font_size: "18sp"
+                    bold: True
+                    background_normal: ""
+                    background_color: 0.231, 0.490, 0.847, 1
+                    color: 1, 1, 1, 0.92
+                    size_hint_y: None
+                    height: "52dp"
+                    on_press: app.login(username_input.text, password_input.text)
+
+                # 底部留白（占位）
+                Widget:
+                    size_hint_y: None
+                    height: "30dp"
 
 <ScanScreen>:
     BoxLayout:
@@ -259,18 +264,19 @@ KV = f'''
                 on_press: app.show_settings()
 '''
 
-
 class BatteryApp(App):
     process_name = StringProperty("")
     operator_name = StringProperty("")
     server_url = StringProperty(load_server_url())
 
     def build(self):
-        Window.softinput_mode = 'pan'
+        # 提前设置背景色，减少黑色闪屏
+        Window.clearcolor = (0.945, 0.957, 0.965, 1)
+        Window.softinput_mode = 'pan'  # 保留 pan 模式，配合 ScrollView 实现滚动
+
         Builder.load_string(KV)
         self._token = None
         self.title = "电池追溯"
-        Window.clearcolor = (0.945, 0.957, 0.965, 1)
         try:
             self.device_id = uniqueid.id
         except:
@@ -402,11 +408,11 @@ class BatteryApp(App):
 
     def show_server_settings(self):
         box = BoxLayout(orientation="vertical", padding=10, spacing=10)
-        url_input = TextInput(text=self.server_url, font_name=DEFAULT_FONT, size_hint_y=None, height=40)
-        box.add_widget(Label(text="服务器地址:", font_name=DEFAULT_FONT))
+        url_input = TextInput(text=self.server_url, font_name=DEFAULT_FONT, size_hint_y=None, height=50)
+        box.add_widget(Label(text="服务器地址:", font_name=DEFAULT_FONT, size_hint_y=None, height=30))
         box.add_widget(url_input)
-        btn_box = BoxLayout(size_hint_y=None, height=40, spacing=10)
-        popup = Popup(title="网络设置", title_font=DEFAULT_FONT, content=box, size_hint=(0.8, 0.35))
+        btn_box = BoxLayout(size_hint_y=None, height=50, spacing=10)
+        popup = Popup(title="网络设置", title_font=DEFAULT_FONT, content=box, size_hint=(0.85, 0.45))
 
         def save(instance):
             new_url = url_input.text.strip()
