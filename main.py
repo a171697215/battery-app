@@ -1,5 +1,6 @@
 """
 智能电池工序追溯系统 - 手机采集端（集成摄像头实时扫码）
+使用 OpenCV 二维码检测，无需额外依赖 zbar 库
 """
 import os
 import json
@@ -24,14 +25,22 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.relativelayout import RelativeLayout
 from kivy.uix.widget import Widget
 from kivy.utils import platform
-from kivy_garden.xcamera import XCamera  # 需要 pip install kivy_garden.xcamera
-from pyzbar.pyzbar import decode as zbar_decode  # 需要 pip install pyzbar
+from kivy_garden.xcamera import XCamera
 from PIL import Image as PILImage
 from plyer import uniqueid, vibrator
 
-# ---------- Android 权限请求（如有需要） ----------
+# ---------- 导入 OpenCV 和 numpy ----------
+try:
+    import cv2
+    import numpy as np
+    OPENCV_AVAILABLE = True
+except ImportError:
+    OPENCV_AVAILABLE = False
+    print("OpenCV not available, QR decoding will fail.")
+
+# ---------- Android 权限请求 ----------
 if platform == 'android':
-    from android.permissions import request_permissions, Permission  # 需要 pyjnius
+    from android.permissions import request_permissions, Permission
 
 # ---------- 字体 ----------
 if os.path.exists("NotoSansCJKsc-Regular.otf"):
@@ -120,7 +129,7 @@ KV = f'''
                 size: "80dp", "40dp"
                 on_press: app.show_server_settings()
 
-        # 可滚动区域，避免软键盘遮挡
+        # 可滚动区域
         ScrollView:
             do_scroll_x: False
             do_scroll_y: True
@@ -180,12 +189,10 @@ KV = f'''
                         size_hint_y: None
                         height: "52dp"
 
-                    # 记住密码左对齐
                     BoxLayout:
                         size_hint_y: None
                         height: "40dp"
                         spacing: "5dp"
-                        # 确保左对齐，不额外占空间
                         CheckBox:
                             id: remember_check
                             size_hint: None, None
@@ -210,7 +217,6 @@ KV = f'''
                         height: "52dp"
                         on_press: app.login(username_input.text, password_input.text)
 
-                # 底部占位
                 Widget:
                     size_hint_y: None
                     height: "40dp"
@@ -242,11 +248,10 @@ KV = f'''
                 halign: "right"
                 padding: "10dp"
 
-        # 扫描预览区域（虚线框 + 摄像头）
+        # 扫描预览区域
         RelativeLayout:
             id: scan_area
-            size_hint: 1, 0.8  # 占用大部分空间
-            # 虚线框绘制
+            size_hint: 1, 0.8
             canvas.after:
                 Color:
                     rgba: 0.231, 0.49, 0.847, 0.9
@@ -256,7 +261,6 @@ KV = f'''
                     dash_length: 12
                     dash_offset: 6
 
-        # 扫码按钮（圆角卡片风格）
         Button:
             id: scan_btn
             text: "🔍 扫码"
@@ -322,14 +326,12 @@ KV = f'''
                 on_press: app.show_settings()
 '''
 
-
 class BatteryApp(App):
     process_name = StringProperty("")
     operator_name = StringProperty("")
     server_url = StringProperty(load_server_url())
 
     def build(self):
-        # 背景色与登录界面一致，消除启动闪变
         Window.clearcolor = (0.945, 0.957, 0.965, 1)
         Window.softinput_mode = 'pan'
 
@@ -353,7 +355,18 @@ class BatteryApp(App):
         self.sm = ScreenManager()
         self.sm.add_widget(LoginScreen(name="login"))
         self.sm.add_widget(ScanScreen(name="scan"))
+
+        # 启动时请求必要权限（Android）
+        if platform == 'android':
+            Clock.schedule_once(lambda dt: self._request_permissions(), 0.5)
+
         return self.sm
+
+    def _request_permissions(self):
+        try:
+            request_permissions([Permission.CAMERA, Permission.INTERNET])
+        except:
+            pass
 
     def _fill_saved_credentials(self, username, password):
         login_screen = self.sm.get_screen('login')
@@ -362,22 +375,16 @@ class BatteryApp(App):
             login_screen.ids.password_input.text = password
             login_screen.ids.remember_check.active = True
 
-    # ---------- 扫码（摄像头实时解码）----------
+    # ---------- 扫码（使用 OpenCV）----------
     def start_scan(self):
-        # 防止重复点击
         if self.camera:
+            return  # 已激活
+
+        if not OPENCV_AVAILABLE:
+            self.show_error("OpenCV 未加载，扫码功能不可用")
             return
 
-        # 请求摄像头权限（Android）
-        if platform == 'android':
-            request_permissions([Permission.CAMERA])
-            # 简单等待权限结果，实际应使用回调，这里假设权限已授予
-            Clock.schedule_once(self._on_android_permission_granted, 0.5)
-        else:
-            self._activate_camera()
-
-    def _on_android_permission_granted(self, dt):
-        # 可以在此检查权限，此处简化直接激活
+        # 权限已在启动时请求，直接激活
         self._activate_camera()
 
     def _activate_camera(self):
@@ -385,7 +392,6 @@ class BatteryApp(App):
         if not scan_screen:
             return
 
-        # 移除旧相机（如果有）
         if self.camera:
             scan_screen.ids.scan_area.remove_widget(self.camera)
             self.camera = None
@@ -393,9 +399,8 @@ class BatteryApp(App):
         try:
             self.camera = XCamera(play=True)
             self.camera.size_hint = (1, 1)
-            scan_screen.ids.scan_area.add_widget(self.camera, index=0)  # 放在虚线框下方
-            # 开始解码循环
-            self.decode_event = Clock.schedule_interval(self._decode_frame, 0.5)
+            scan_screen.ids.scan_area.add_widget(self.camera, index=0)
+            self.decode_event = Clock.schedule_interval(self._decode_frame, 0.3)  # 每0.3秒解码一次
             scan_screen.ids.status_label.text = "扫描中..."
         except Exception as e:
             self.show_error(f"摄像头启动失败：{e}")
@@ -404,22 +409,23 @@ class BatteryApp(App):
     def _decode_frame(self, dt):
         if not self.camera or not self.camera.texture:
             return
-        # 获取摄像头纹理的原始像素数据
         tex = self.camera.texture
         size = tex.size
-        pixels = tex.pixels  # RGBA 字符串
+        pixels = tex.pixels  # RGBA bytes
 
         try:
-            # 将 RGBA 转换为 PIL Image（灰度处理以加速）
-            pil_image = PILImage.frombytes('RGBA', size, pixels)
-            pil_image = pil_image.convert('L')  # 灰度
-            # 使用 pyzbar 解码
-            decoded = zbar_decode(pil_image)
-            if decoded:
-                data = decoded[0].data.decode('utf-8')
-                self.on_barcode_detected(data)
+            # 转为 numpy 数组并解码
+            img = np.frombuffer(pixels, dtype=np.uint8).reshape(size[1], size[0], 4)
+            # 转为 BGR（OpenCV 格式）
+            img_bgr = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
+            detector = cv2.QRCodeDetector()
+            data, _, _ = detector.detectAndDecode(img_bgr)
+            if data and data.strip():
+                # 成功解码，在主线程处理
+                self.on_barcode_detected(data.strip())
         except Exception as e:
-            pass  # 忽略解码错误
+            # 忽略解码错误（常见于非二维码帧）
+            pass
 
     @mainthread
     def on_barcode_detected(self, barcode_data):
@@ -513,7 +519,7 @@ class BatteryApp(App):
             return False, f"请求异常：{e}"
 
     def logout(self):
-        self.stop_scan()  # 退出扫描界面时关闭摄像头
+        self.stop_scan()
         self._token = None
         self.process_name = ""
         self.operator_name = ""
@@ -529,7 +535,6 @@ class BatteryApp(App):
         popup.open()
 
     def show_server_settings(self):
-        # 修复弹窗内容显示不全的问题：使用 ScrollView + 固定高度
         box = BoxLayout(orientation="vertical", spacing=10, padding=10)
         box.add_widget(Label(text="服务器地址:", font_name=DEFAULT_FONT, size_hint_y=None, height=30))
         url_input = TextInput(text=self.server_url, font_name=DEFAULT_FONT, size_hint_y=None, height=40)
@@ -567,22 +572,17 @@ class BatteryApp(App):
 class LoginScreen(Screen):
     pass
 
-
 class ScanScreen(Screen):
     def on_enter(self, *args):
-        # 清空状态文字（不再显示“点击下方扫码按钮”）
         self.ids.status_label.text = ""
         self.ids.last_sn_label.text = ""
-        # 如果之前有摄像头残留，清除
         app = App.get_running_app()
         if app.camera:
             app.stop_scan()
 
     def on_leave(self, *args):
-        # 离开扫描界面时关闭摄像头，避免资源占用
         app = App.get_running_app()
         app.stop_scan()
-
 
 if __name__ == "__main__":
     BatteryApp().run()
