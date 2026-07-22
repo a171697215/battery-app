@@ -33,11 +33,52 @@ jobs:
             autoconf libtool pkg-config \
             zlib1g-dev libncurses-dev \
             cmake libffi-dev libssl-dev python3-dev \
-            gettext autopoint  # 新增：提供 AM_ICONV 宏
+            gettext autopoint
 
       - name: Set up autotools environment
         run: |
           echo "ACLOCAL_PATH=/usr/share/aclocal:/usr/share/gettext/aclocal" >> $GITHUB_ENV
+
+      - name: Pre-patch libffi and libzbar sources
+        run: |
+          # 定义架构和 NDK 目标
+          ARCHS=("arm64-v8a" "armeabi-v7a")
+          NDK_TARGET="21"
+          BUILD_DIR=".buildozer/android/platform/build-arm64-v8a_armeabi-v7a"
+
+          # 1. 修补 libffi（已有）
+          for ARCH in "${ARCHS[@]}"; do
+            TARGET_DIR="$BUILD_DIR/build/other_builds/libffi/${ARCH}__ndk_target_${NDK_TARGET}/libffi"
+            if [ ! -d "$TARGET_DIR" ]; then
+              echo "Cloning libffi for ${ARCH} ..."
+              mkdir -p "$(dirname "$TARGET_DIR")"
+              git clone --depth 1 --branch v3.4.4 https://github.com/libffi/libffi.git "$TARGET_DIR"
+              cd "$TARGET_DIR"
+              sed -i 's/^LT_SYS_SYMBOL_USCORE/dnl LT_SYS_SYMBOL_USCORE/' configure.ac
+              cd -
+            else
+              echo "libffi for ${ARCH} already exists, skipping."
+            fi
+          done
+
+          # 2. 修补 libzbar（新增）
+          # libzbar 源码仓库：ZBar 官方，版本选择 v0.23.92 或 master
+          LIBZBAR_VERSION="0.23.92"
+          for ARCH in "${ARCHS[@]}"; do
+            TARGET_DIR="$BUILD_DIR/build/other_builds/libzbar/${ARCH}__ndk_target_${NDK_TARGET}/libzbar"
+            if [ ! -d "$TARGET_DIR" ]; then
+              echo "Cloning libzbar ($LIBZBAR_VERSION) for ${ARCH} ..."
+              mkdir -p "$(dirname "$TARGET_DIR")"
+              # 使用 ZBar 官方仓库
+              git clone --depth 1 --branch $LIBZBAR_VERSION https://github.com/ZBar/ZBar.git "$TARGET_DIR" || git clone --depth 1 https://github.com/ZBar/ZBar.git "$TARGET_DIR"
+              cd "$TARGET_DIR"
+              # 注释掉 LT_SYS_SYMBOL_USCORE 宏
+              sed -i 's/^LT_SYS_SYMBOL_USCORE/dnl LT_SYS_SYMBOL_USCORE/' configure.ac
+              cd -
+            else
+              echo "libzbar for ${ARCH} already exists, skipping."
+            fi
+          done
 
       - name: Install buildozer
         run: pip install buildozer
