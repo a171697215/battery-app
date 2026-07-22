@@ -73,11 +73,10 @@ jobs:
               # 注释掉 LT_SYS_SYMBOL_USCORE 宏
               sed -i 's/^LT_SYS_SYMBOL_USCORE/dnl LT_SYS_SYMBOL_USCORE/' configure.ac
 
-              # 从 Makefile.am 和 Makefile.in 中删除 -Werror
+              # 从 Makefile.am 中删除 -Werror
               sed -i 's/-Werror//g' Makefile.am
-              sed -i 's/-Werror//g' Makefile.in
 
-              # 重新生成 configure 和 Makefile
+              # 重新生成 configure 和 Makefile（包括 Makefile.in）
               autoreconf -vif
 
               cd -
