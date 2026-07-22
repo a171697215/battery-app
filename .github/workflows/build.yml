@@ -46,7 +46,7 @@ jobs:
           NDK_TARGET="21"
           BUILD_DIR=".buildozer/android/platform/build-arm64-v8a_armeabi-v7a"
 
-          # 1. 修补 libffi（注释 LT_SYS_SYMBOL_USCORE）
+          # 1. 修补 libffi
           for ARCH in "${ARCHS[@]}"; do
             TARGET_DIR="$BUILD_DIR/build/other_builds/libffi/${ARCH}__ndk_target_${NDK_TARGET}/libffi"
             if [ ! -d "$TARGET_DIR" ]; then
@@ -61,7 +61,7 @@ jobs:
             fi
           done
 
-          # 2. 修补 libzbar（使用 master 分支，移除 -Werror，重新生成 configure）
+          # 2. 修补 libzbar（使用 master 分支）
           for ARCH in "${ARCHS[@]}"; do
             TARGET_DIR="$BUILD_DIR/build/other_builds/libzbar/${ARCH}__ndk_target_${NDK_TARGET}/libzbar"
             if [ ! -d "$TARGET_DIR" ]; then
@@ -73,10 +73,15 @@ jobs:
               # 注释掉 LT_SYS_SYMBOL_USCORE 宏
               sed -i 's/^LT_SYS_SYMBOL_USCORE/dnl LT_SYS_SYMBOL_USCORE/' configure.ac
 
-              # 从 Makefile.am 中删除 -Werror
+              # 删除 -Werror
               sed -i 's/-Werror//g' Makefile.am
+              # Makefile.in 可能不存在，忽略错误
+              sed -i 's/-Werror//g' Makefile.in 2>/dev/null || true
 
-              # 重新生成 configure 和 Makefile（包括 Makefile.in）
+              # 添加 AM_PROG_AR 以消除 automake 警告
+              sed -i '/AC_INIT/a AM_PROG_AR' configure.ac
+
+              # 重新生成 configure 和 Makefile
               autoreconf -vif
 
               cd -
