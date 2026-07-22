@@ -75,11 +75,19 @@ jobs:
 
               # 删除 -Werror
               sed -i 's/-Werror//g' Makefile.am
-              # Makefile.in 可能不存在，忽略错误
               sed -i 's/-Werror//g' Makefile.in 2>/dev/null || true
 
-              # 添加 AM_PROG_AR 以消除 automake 警告
+              # 添加 AM_PROG_AR
               sed -i '/AC_INIT/a AM_PROG_AR' configure.ac
+
+              # 修改 AM_INIT_AUTOMAKE 以忽略警告
+              if grep -q 'AM_INIT_AUTOMAKE' configure.ac; then
+                # 如果存在，在括号内的参数中添加 -Wno-error
+                sed -i 's/AM_INIT_AUTOMAKE(\(.*\))/AM_INIT_AUTOMAKE([\1 -Wno-error])/' configure.ac
+              else
+                # 如果不存在，在 AC_INIT 后插入一行
+                sed -i '/AC_INIT/a AM_INIT_AUTOMAKE([-Wno-error])' configure.ac
+              fi
 
               # 重新生成 configure 和 Makefile
               autoreconf -vif
