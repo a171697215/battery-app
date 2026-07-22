@@ -10,7 +10,7 @@ orientation = portrait
 android.permissions = INTERNET,CAMERA,VIBRATE
 android.accept_sdk_license = True
 android.api = 33
-android.minapi = 21
+android.minapi = 24          # ← 关键修改：从 21 改为 24
 android.ndk = 25c
 android.sdk = 33
 
