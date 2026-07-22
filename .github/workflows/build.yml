@@ -32,21 +32,14 @@ jobs:
             git zip unzip openjdk-17-jdk \
             autoconf libtool pkg-config \
             zlib1g-dev libncurses-dev \
-            cmake libffi-dev libssl-dev python3-dev \
-            gettext autopoint
+            cmake libffi-dev libssl-dev python3-dev
 
-      - name: Set up autotools environment
+      - name: Pre-patch libffi (skip LT_SYS_SYMBOL_USCORE error)
         run: |
-          echo "ACLOCAL_PATH=/usr/share/aclocal:/usr/share/gettext/aclocal" >> $GITHUB_ENV
-
-      - name: Pre-patch libffi and libzbar sources
-        run: |
-          # 定义架构和 NDK 目标
           ARCHS=("arm64-v8a" "armeabi-v7a")
           NDK_TARGET="21"
           BUILD_DIR=".buildozer/android/platform/build-arm64-v8a_armeabi-v7a"
 
-          # 1. 修补 libffi
           for ARCH in "${ARCHS[@]}"; do
             TARGET_DIR="$BUILD_DIR/build/other_builds/libffi/${ARCH}__ndk_target_${NDK_TARGET}/libffi"
             if [ ! -d "$TARGET_DIR" ]; then
@@ -58,48 +51,6 @@ jobs:
               cd -
             else
               echo "libffi for ${ARCH} already exists, skipping."
-            fi
-          done
-
-          # 2. 修补 libzbar（彻底方案）
-          for ARCH in "${ARCHS[@]}"; do
-            TARGET_DIR="$BUILD_DIR/build/other_builds/libzbar/${ARCH}__ndk_target_${NDK_TARGET}/libzbar"
-            if [ ! -d "$TARGET_DIR" ]; then
-              echo "Cloning libzbar (master) for ${ARCH} ..."
-              mkdir -p "$(dirname "$TARGET_DIR")"
-              git clone --depth 1 https://github.com/ZBar/ZBar.git "$TARGET_DIR"
-              cd "$TARGET_DIR"
-
-              # 1. 注释 LT_SYS_SYMBOL_USCORE
-              sed -i 's/^LT_SYS_SYMBOL_USCORE/dnl LT_SYS_SYMBOL_USCORE/' configure.ac
-
-              # 2. 删除 -Werror（多个位置）
-              sed -i 's/-Werror//g' Makefile.am
-              find . -name "Makefile.am" -exec sed -i 's/-Werror//g' {} \;
-              find . -name "Makefile.in" -exec sed -i 's/-Werror//g' {} \; 2>/dev/null || true
-
-              # 3. 添加 AM_PROG_AR
-              sed -i '/AC_INIT/a AM_PROG_AR' configure.ac
-
-              # 4. 修改 AM_INIT_AUTOMAKE 添加 -Wno-error
-              if grep -q 'AM_INIT_AUTOMAKE' configure.ac; then
-                sed -i 's/AM_INIT_AUTOMAKE(\(.*\))/AM_INIT_AUTOMAKE([\1 -Wno-error])/' configure.ac
-              else
-                sed -i '/AC_INIT/a AM_INIT_AUTOMAKE([-Wno-error])' configure.ac
-              fi
-
-              # 5. 添加 --disable-option-checking 到 configure 参数（避免 AM_ICONV 问题）
-              sed -i 's/^AC_INIT/AC_INIT\nAC_DISABLE_OPTION_CHECKING/' configure.ac
-
-              # 6. 强制禁用 iconv 检查（Android 不需要）
-              sed -i '/AM_ICONV/d' configure.ac
-
-              # 7. 生成 configure（在本地环境）
-              autoreconf -vif --force
-
-              cd -
-            else
-              echo "libzbar for ${ARCH} already exists, skipping."
             fi
           done
 
