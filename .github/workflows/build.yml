@@ -46,7 +46,7 @@ jobs:
           NDK_TARGET="21"
           BUILD_DIR=".buildozer/android/platform/build-arm64-v8a_armeabi-v7a"
 
-          # 1. 修补 libffi（已有）
+          # 1. 修补 libffi
           for ARCH in "${ARCHS[@]}"; do
             TARGET_DIR="$BUILD_DIR/build/other_builds/libffi/${ARCH}__ndk_target_${NDK_TARGET}/libffi"
             if [ ! -d "$TARGET_DIR" ]; then
@@ -61,19 +61,26 @@ jobs:
             fi
           done
 
-          # 2. 修补 libzbar（新增）
-          # libzbar 源码仓库：ZBar 官方，版本选择 v0.23.92 或 master
+          # 2. 修补 libzbar（禁用 -Werror）
           LIBZBAR_VERSION="0.23.92"
           for ARCH in "${ARCHS[@]}"; do
             TARGET_DIR="$BUILD_DIR/build/other_builds/libzbar/${ARCH}__ndk_target_${NDK_TARGET}/libzbar"
             if [ ! -d "$TARGET_DIR" ]; then
               echo "Cloning libzbar ($LIBZBAR_VERSION) for ${ARCH} ..."
               mkdir -p "$(dirname "$TARGET_DIR")"
-              # 使用 ZBar 官方仓库
-              git clone --depth 1 --branch $LIBZBAR_VERSION https://github.com/ZBar/ZBar.git "$TARGET_DIR" || git clone --depth 1 https://github.com/ZBar/ZBar.git "$TARGET_DIR"
+              git clone --depth 1 --branch $LIBZBAR_VERSION https://github.com/ZBar/ZBar.git "$TARGET_DIR"
               cd "$TARGET_DIR"
+              
               # 注释掉 LT_SYS_SYMBOL_USCORE 宏
               sed -i 's/^LT_SYS_SYMBOL_USCORE/dnl LT_SYS_SYMBOL_USCORE/' configure.ac
+              
+              # 删除 -Werror（将警告视为错误）
+              sed -i 's/-Werror//g' Makefile.am
+              sed -i 's/-Werror//g' Makefile.in
+              
+              # 重新生成 configure 和 Makefile
+              autoreconf -vif
+              
               cd -
             else
               echo "libzbar for ${ARCH} already exists, skipping."
