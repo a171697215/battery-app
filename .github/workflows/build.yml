@@ -32,27 +32,8 @@ jobs:
             git zip unzip openjdk-17-jdk \
             autoconf libtool pkg-config \
             zlib1g-dev libncurses-dev \
-            cmake libffi-dev libssl-dev python3-dev
-
-      - name: Pre-patch libffi (skip LT_SYS_SYMBOL_USCORE error)
-        run: |
-          ARCHS=("arm64-v8a" "armeabi-v7a")
-          NDK_TARGET="21"
-          BUILD_DIR=".buildozer/android/platform/build-arm64-v8a_armeabi-v7a"
-
-          for ARCH in "${ARCHS[@]}"; do
-            TARGET_DIR="$BUILD_DIR/build/other_builds/libffi/${ARCH}__ndk_target_${NDK_TARGET}/libffi"
-            if [ ! -d "$TARGET_DIR" ]; then
-              echo "Cloning libffi for ${ARCH} ..."
-              mkdir -p "$(dirname "$TARGET_DIR")"
-              git clone --depth 1 --branch v3.4.4 https://github.com/libffi/libffi.git "$TARGET_DIR"
-              cd "$TARGET_DIR"
-              sed -i 's/^LT_SYS_SYMBOL_USCORE/dnl LT_SYS_SYMBOL_USCORE/' configure.ac
-              cd -
-            else
-              echo "libffi for ${ARCH} already exists, skipping."
-            fi
-          done
+            cmake libffi-dev libssl-dev python3-dev \
+            gettext autopoint
 
       - name: Install buildozer
         run: pip install buildozer
