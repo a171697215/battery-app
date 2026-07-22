@@ -10,7 +10,7 @@ orientation = portrait
 android.permissions = INTERNET,CAMERA,VIBRATE
 android.accept_sdk_license = True
 android.api = 33
-android.minapi = 21          # zbar 不需要 API 24，保持 21 更兼容
+android.minapi = 21
 android.ndk = 25c
 android.sdk = 33
 
