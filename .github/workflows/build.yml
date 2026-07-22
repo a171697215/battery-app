@@ -61,7 +61,7 @@ jobs:
             fi
           done
 
-          # 2. 修补 libzbar（使用 master 分支）
+          # 2. 修补 libzbar（彻底方案）
           for ARCH in "${ARCHS[@]}"; do
             TARGET_DIR="$BUILD_DIR/build/other_builds/libzbar/${ARCH}__ndk_target_${NDK_TARGET}/libzbar"
             if [ ! -d "$TARGET_DIR" ]; then
@@ -70,27 +70,32 @@ jobs:
               git clone --depth 1 https://github.com/ZBar/ZBar.git "$TARGET_DIR"
               cd "$TARGET_DIR"
 
-              # 注释掉 LT_SYS_SYMBOL_USCORE 宏
+              # 1. 注释 LT_SYS_SYMBOL_USCORE
               sed -i 's/^LT_SYS_SYMBOL_USCORE/dnl LT_SYS_SYMBOL_USCORE/' configure.ac
 
-              # 删除 -Werror
+              # 2. 删除 -Werror（多个位置）
               sed -i 's/-Werror//g' Makefile.am
-              sed -i 's/-Werror//g' Makefile.in 2>/dev/null || true
+              find . -name "Makefile.am" -exec sed -i 's/-Werror//g' {} \;
+              find . -name "Makefile.in" -exec sed -i 's/-Werror//g' {} \; 2>/dev/null || true
 
-              # 添加 AM_PROG_AR
+              # 3. 添加 AM_PROG_AR
               sed -i '/AC_INIT/a AM_PROG_AR' configure.ac
 
-              # 修改 AM_INIT_AUTOMAKE 以忽略警告
+              # 4. 修改 AM_INIT_AUTOMAKE 添加 -Wno-error
               if grep -q 'AM_INIT_AUTOMAKE' configure.ac; then
-                # 如果存在，在括号内的参数中添加 -Wno-error
                 sed -i 's/AM_INIT_AUTOMAKE(\(.*\))/AM_INIT_AUTOMAKE([\1 -Wno-error])/' configure.ac
               else
-                # 如果不存在，在 AC_INIT 后插入一行
                 sed -i '/AC_INIT/a AM_INIT_AUTOMAKE([-Wno-error])' configure.ac
               fi
 
-              # 重新生成 configure 和 Makefile
-              autoreconf -vif
+              # 5. 添加 --disable-option-checking 到 configure 参数（避免 AM_ICONV 问题）
+              sed -i 's/^AC_INIT/AC_INIT\nAC_DISABLE_OPTION_CHECKING/' configure.ac
+
+              # 6. 强制禁用 iconv 检查（Android 不需要）
+              sed -i '/AM_ICONV/d' configure.ac
+
+              # 7. 生成 configure（在本地环境）
+              autoreconf -vif --force
 
               cd -
             else
